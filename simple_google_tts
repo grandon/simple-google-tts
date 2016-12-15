@@ -36,10 +36,10 @@ ScriptPath="$(readlink -f "$0")"
 ScriptBase="$(basename "$0")"
 ParentPath="${ScriptPath%/*}"
 speakpl="$ParentPath/speak.pl"
+workingdir=`pwd`
 
 TOP_PID="$$"
 PidFile="/tmp/${0##*/}.pid"
-
 
 ############### SETTINGS #################
 
@@ -48,11 +48,12 @@ Player="play"
 ##############  DIALOGS  #################
 
 Usage="\
-$(basename "$0") [-p|-g|-h] languagecode ['strings'|'file.txt']
+$(basename "$0") [-p|-g|-h|-w "file.wav"] languagecode ['strings'|'file.txt']
 
     -p:   use offline TTS (pico2wave) instead of Google's TTS system
     -g:   activate gui notifications (via notify-send)
     -h:   display this help section
+    -w:   write to a-law wav file (ffmpeg required)
 
     Selection of valid language codes: en, es, de...
     Check speak.pl for a list of all valid codes
@@ -122,7 +123,7 @@ check_existing_instance(){
 
 arg_evaluate_options(){
     # grab options if present
-    while getopts "gph" Options; do
+    while getopts "gph:w:" Options; do
       case $Options in
         g ) OptNotify="1"
             ;;
@@ -130,6 +131,12 @@ arg_evaluate_options(){
             ;;
         h ) echo "$Usage"
             exit 0
+            ;;
+        w ) OptWrite="1"
+            OptWriteFile="$OPTARG"
+            if [ "`echo $OptWriteFile | cut -c1,1`" != "/" ]; then
+                OptWriteFile="$workingdir/$OptWriteFile"
+            fi
             ;;
        \? ) echo "$Usage"
             exit 1
@@ -256,7 +263,7 @@ tts_google(){
       speakpl_synth "${TextSections[$i]}"
       [[ -n "$PlayerPID" ]] && wait "$PlayerPID"
       [[ -f "out_$((i-1)).mp3" ]] && rm "out_$((i-1)).mp3"
-      echo "$MsgInfoPlayback $((i+1))"
+      echo "$MsgInfoPlayback $((i+1)) $OutFile"
       $Player "$OutFile" > /dev/null 2>&1 &
       PlayerPID="$!"
     else
@@ -292,6 +299,12 @@ tts_pico(){
 
 cleanup(){
   pkill -P "$TOP_PID"
+ 
+  if [[ "$OptWrite" = "1" ]]; then
+      [[ -f "$TmpDir/$OutFile" ]] && ffmpeg -loglevel quiet -y -i "$TmpDir/$OutFile" -acodec pcm_alaw -ar 8000 -ac 1 "$OptWriteFile"
+  fi
+ 
+  [[ -f "$TmpDir/$OutFile" ]]
   [[ -n "$TmpDir" && -d "$TmpDir" ]] && rm -r "$TmpDir"
   [[ -n "$PidFile" && -f "$PidFile" ]] && rm "$PidFile"
 }
